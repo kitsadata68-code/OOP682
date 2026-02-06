@@ -1,37 +1,32 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
+from sqlalchemy.orm import Session
 from .models import Task, TaskCreate
+from . import models_orm
+
 
 class ITaskRepository(ABC):
-    def update(self, task_id: int, completed: bool) -> Optional[Task]:
-        raise NotImplementedError
-
-class InMemoryTaskRepository(ITaskRepository):
-    # ... __init__, get_all, create เดิม ...
-
-    # เพิ่ม function นี้ต่อท้ายสุด
-    @abstractmethod
-    def update_task_complete(self, task_id: int, completed: bool) -> Optional[Task]:
-        pass
-    
     @abstractmethod
     def get_all(self) -> List[Task]:
         pass
-
     @abstractmethod
     def create(self, task: TaskCreate) -> Task:
         pass
-        
     @abstractmethod
     def get_by_id(self, task_id: int) -> Optional[Task]:
         pass
+    @abstractmethod
+    def update(self, task_id: int, completed: bool) -> Optional[Task]:
+        pass
+    @abstractmethod
+    def get_by_title(self, title: str) -> Optional[Task]:
+        pass
 
-# ต้องชื่อเหมือนกันเป๊ะๆ
-class InMemoryTaskRepository(ITaskRepository):  
-    # code...
+
+class InMemoryTaskRepository(ITaskRepository):
     def __init__(self):
-            self.tasks = []
-            self.current_id = 1
+        self.tasks = []
+        self.current_id = 1
 
     def get_all(self) -> List[Task]:
         return self.tasks
@@ -45,37 +40,55 @@ class InMemoryTaskRepository(ITaskRepository):
         self.current_id += 1
         return task
     
-    def update_task_complete(self, task_id: int, completed: bool) -> Optional[Task]:
-        db_task = self.get_by_id(task_id)
-        if db_task:
-            db_task.completed = completed
-            return db_task
-        return None
-
     def get_by_id(self, task_id: int) -> Optional[Task]:
         for task in self.tasks:
             if task.id == task_id:
                 return task
         return None
 
-# app/repositories.py (เพิ่มต่อท้าย)
-from sqlalchemy.orm import Session
-from . import models_orm # ต้องสร้าง SQLAlchemy Model แยก
+    # --- แก้ไขตรงนี้ครับ (ให้ค้นหาใน List แทน DB) ---
+    def get_by_title(self, title: str) -> Optional[Task]:
+        for task in self.tasks:
+            if task.title == title:
+                return task
+        return None
+    # --------------------------------------------
+
+    def update(self, task_id: int, completed: bool) -> Optional[Task]:
+        task = self.get_by_id(task_id)
+        if task:
+            task.completed = completed
+            return task
+        return None
+
 
 class SqlTaskRepository(ITaskRepository):
+    # ส่วนนี้ของคุณถูกต้อง 100% แล้วครับ เยี่ยมมาก!
     def __init__(self, db: Session):
         self.db = db
 
     def get_all(self) -> List[Task]:
-        return self.db.query(models_orm.Task).all()
+        return self.db.query(models_orm.TaskORM).all()
 
     def create(self, task_in: TaskCreate) -> Task:
-        db_task = models_orm.Task(**task_in.dict())
+        db_task = models_orm.TaskORM(**task_in.dict())
         self.db.add(db_task)
         self.db.commit()
         self.db.refresh(db_task)
         return db_task
     
-    def get_by_id(self, id: int):
-        # ... implementation ...
-        pass
+    def get_by_id(self, task_id: int) -> Optional[Task]:
+        return self.db.query(models_orm.TaskORM).filter(models_orm.TaskORM.id == task_id).first()
+
+    def update(self, task_id: int, completed: bool) -> Optional[Task]:
+        db_task = self.get_by_id(task_id)
+        if db_task:
+            db_task.completed = completed
+            self.db.commit()
+            self.db.refresh(db_task)
+            return db_task
+        return None
+        
+    def get_by_title(self, title: str) -> Optional[Task]:
+        # ค้นหาใน DB: เลือกตาราง TaskORM -> กรองเอาที่ title ตรงกัน -> ขอตัวแรกที่เจอ
+        return self.db.query(models_orm.TaskORM).filter(models_orm.TaskORM.title == title).first()

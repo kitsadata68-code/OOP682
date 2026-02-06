@@ -1,6 +1,6 @@
+# app/models_orm.py
 from sqlalchemy import Column, Integer, String, Boolean
-from .database import Base  # ต้องมีไฟล์ database.py ที่นิยาม Base ไว้
-
+from .database import Base
 
 class TaskORM(Base):
     __tablename__ = "tasks"
